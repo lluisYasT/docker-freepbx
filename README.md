@@ -13,7 +13,7 @@
 
 ### Run your FreePBX image
 ```bash
-docker run --net=host -d -t jmar71n/freepbx
+docker run --net=host -d -t lluisyast/freepbx
 ```
 
 Test it out by visiting your hosts ip address in a browser.
