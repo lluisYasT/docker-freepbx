@@ -22,9 +22,11 @@ COPY start-amportal.sh /etc/my_init.d/start-amportal.sh
 # *Loosely* Following steps on FreePBX wiki
 # http://wiki.freepbx.org/display/FOP/Installing+FreePBX+13+on+Ubuntu+Server+14.04.2+LTS
 
-RUN add-apt-repository -y ppa:ondrej/php
 # Install Required Dependencies
-RUN apt-get update \
+RUN add-apt-repository -y ppa:ondrej/php \
+  && gpg --keyserver pgp.mit.edu --recv-keys 4F4EA0AAE5267A6C \
+  && gpg --armor --export 4F4EA0AAE5267A6C | apt-key add - \
+  && apt-get update \
   && apt-key update \
 	&& apt-get upgrade -y --allow-unauthenticated \
 	&& apt-get install -y --allow-unauthenticated \
