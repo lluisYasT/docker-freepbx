@@ -22,10 +22,12 @@ COPY start-amportal.sh /etc/my_init.d/start-amportal.sh
 # *Loosely* Following steps on FreePBX wiki
 # http://wiki.freepbx.org/display/FOP/Installing+FreePBX+13+on+Ubuntu+Server+14.04.2+LTS
 
+RUN add-apt-repository -y ppa:ondrej/php
 # Install Required Dependencies
 RUN apt-get update \
-	&& apt-get upgrade -y \
-	&& apt-get install -y \
+  && apt-key update \
+	&& apt-get upgrade -y --allow-unauthenticated \
+	&& apt-get install -y --allow-unauthenticated \
 		apache2 \
 		autoconf \
 		automake \
@@ -37,7 +39,6 @@ RUN apt-get update \
 		libasound2-dev \
 		libcurl4-openssl-dev \
 		libical-dev \
-		libmyodbc \
 		libmysqlclient-dev \
 		libncurses5-dev \
 		libneon27-dev \
@@ -55,40 +56,33 @@ RUN apt-get update \
 		mysql-client \
 		mysql-server \
 		openssh-server \
-		php-pear \
-		php5 \
-		php5-cli \
-		php5-curl \
-		php5-gd \
-		php5-mysql \
+		php5.6 \
+		php5.6-cli \
+		php5.6-curl \
+		php5.6-gd \
+		php5.6-mysql \
+    php5.6-xml \
 		pkg-config \
 		sox \
 		subversion \
+		sudo \
 		sqlite3 \
 		unixodbc-dev \
 		uuid \
 		uuid-dev \
+	&& update-alternatives --set php /usr/bin/php5.6 \
+	&& apt-get install -y --allow-unauthenticated php-pear \
 	&& apt-get clean \
 	&& rm -rf /var/lib/apt/lists/*
+
+RUN ln -s /etc/php/5.6/ /etc/php5
 
 # Replace default conf files to reduce memory usage
 COPY conf/my-small.cnf /etc/mysql/my.cnf
 COPY conf/mpm_prefork.conf /etc/apache2/mods-available/mpm_prefork.conf
 
 # Install Legacy pear requirements
-RUN pear install Console_Getopt
-
-# Compile and install pjproject
-WORKDIR /usr/src
-RUN curl -sf -o pjproject.tar.bz2 -L http://www.pjsip.org/release/2.4/pjproject-2.4.tar.bz2 \
-	&& tar -xjvf pjproject.tar.bz2 \
-	&& rm -f pjproject.tar.bz2 \
-	&& cd pjproject-2.4 \
-	&& CFLAGS='-DPJ_HAS_IPV6=1' ./configure --enable-shared --disable-sound --disable-resample --disable-video --disable-opencore-amr \
-	&& make dep \
-	&& make \ 
-	&& make install \
-	&& rm -r /usr/src/pjproject-2.4
+# RUN pear install Console_Getopt
 
 # Compile and Install jansson
 WORKDIR /usr/src
@@ -110,12 +104,12 @@ RUN curl -sf -o asterisk.tar.gz -L http://downloads.asterisk.org/pub/telephony/a
 	&& tar -xzf /usr/src/asterisk.tar.gz -C /usr/src/asterisk --strip-components=1 \
 	&& rm asterisk.tar.gz \
 	&& cd asterisk \
-	&& ./configure \
+	&& ./configure --with-pjproject-bundled \
 	&& contrib/scripts/get_mp3_source.sh \
 	&& make menuselect.makeopts \
 	&& sed -i "s/format_mp3//" menuselect.makeopts \
 	&& sed -i "s/BUILD_NATIVE//" menuselect.makeopts \
-	&& make \
+	&& make -j8 \
 	&& make install \
 	&& make config \
 	&& ldconfig \
@@ -157,12 +151,18 @@ RUN sed -i 's/\(^upload_max_filesize = \).*/\120M/' /etc/php5/apache2/php.ini \
 	&& sed -i 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
 
 # Configure Asterisk database in MYSQL
-RUN /etc/init.d/mysql start \
-	&& mysqladmin -u root create asterisk \
-	&& mysqladmin -u root create asteriskcdrdb \
-	&& mysql -u root -e "GRANT ALL PRIVILEGES ON asterisk.* TO $ASTERISKUSER@localhost IDENTIFIED BY '';" \
-	&& mysql -u root -e "GRANT ALL PRIVILEGES ON asteriskcdrdb.* TO $ASTERISKUSER@localhost IDENTIFIED BY '';" \
-	&& mysql -u root -e "flush privileges;"
+RUN /etc/init.d/mysql start && sleep 5 \
+  && mysql -u root -e  "CREATE DATABASE asterisk;" \
+  && echo "Asterisk DB created!" \
+  && mysql -u root -e "CREATE DATABASE asteriskcdrdb;" \
+  && echo "AsteriskCDR DB created!" \
+  && mysql -u root -e "CREATE USER $ASTERISKUSER@localhost IDENTIFIED BY '';" \
+  && echo "$ASTERISKUSER created!" \
+  && mysql -u root -e "GRANT ALL PRIVILEGES ON asterisk.* TO $ASTERISKUSER@localhost IDENTIFIED BY '';" \
+  && echo "Granted priviligese for $ASTERISKUSER on asterisk DB" \
+  && mysql -u root -e "GRANT ALL PRIVILEGES ON asteriskcdrdb.* TO $ASTERISKUSER@localhost IDENTIFIED BY '';" \
+  && echo "Granted priviligese for $ASTERISKUSER on asteriskCDR DB" \
+  && mysql -u root -e "flush privileges;"
 
 #Make CDRs work
 COPY conf/cdr/odbc.ini /etc/odbc.ini
@@ -171,6 +171,10 @@ COPY conf/cdr/cdr_adaptive_odbc.conf /etc/asterisk/cdr_adaptive_odbc.conf
 RUN chown asterisk:asterisk /etc/asterisk/cdr_adaptive_odbc.conf \
 	&& chmod 775 /etc/asterisk/cdr_adaptive_odbc.conf
 
+# Enable Rewrite Module
+RUN a2enmod rewrite
+
+#RUN pear install Console_Getopt
 # Download and install FreePBX
 WORKDIR /usr/src
 RUN curl -sf -o freepbx.tgz -L http://mirror.freepbx.org/modules/packages/freepbx/freepbx-13.0-latest.tgz \
@@ -180,8 +184,9 @@ RUN curl -sf -o freepbx.tgz -L http://mirror.freepbx.org/modules/packages/freepb
 	&& /etc/init.d/mysql start \
 	&& mkdir /var/www/html \
 	&& /etc/init.d/apache2 start \
-	&& /usr/sbin/asterisk \
+	&& ./start_asterisk start \
 	&& sleep 5 \
+	&& sed -i "s/'0000-00-00 00:00:00'/CURRENT_TIMESTAMP/" installlib/SQL/cdr.sql \
 	&& ./install -n \
 	&& fwconsole restart \
 	&& rm -r /usr/src/freepbx
