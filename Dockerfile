@@ -194,4 +194,6 @@ RUN curl -sf -o freepbx.tgz -L http://mirror.freepbx.org/modules/packages/freepb
 	&& fwconsole restart \
 	&& rm -r /usr/src/freepbx
 
+RUN /usr/sbin/fwconsole ma installall
+
 WORKDIR /
