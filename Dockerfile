@@ -192,8 +192,7 @@ RUN curl -sf -o freepbx.tgz -L http://mirror.freepbx.org/modules/packages/freepb
 	&& sed -i "s/'0000-00-00 00:00:00'/CURRENT_TIMESTAMP/" installlib/SQL/cdr.sql \
 	&& ./install -n \
 	&& fwconsole restart \
-	&& rm -r /usr/src/freepbx
-
-RUN /usr/sbin/fwconsole ma installall
+	&& rm -r /usr/src/freepbx \
+  && fwconsole ma installall
 
 WORKDIR /
